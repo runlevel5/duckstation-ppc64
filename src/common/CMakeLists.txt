@@ -31,6 +31,7 @@ add_library(common
   gsvector_neon.h
   gsvector_nosimd.h
   gsvector_sse.h
+  gsvector_vsx.h
   intrin.h
   hash_combine.h
   heap_array.h

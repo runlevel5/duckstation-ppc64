@@ -73,7 +73,7 @@ namespace {
 } // namespace GPU_SW_Rasterizer::Scalar
 
 // Default vector implementation definitions.
-#if defined(CPU_ARCH_SSE) || defined(CPU_ARCH_NEON)
+#if defined(CPU_ARCH_SSE) || defined(CPU_ARCH_NEON) || defined(CPU_ARCH_VSX)
 namespace GPU_SW_Rasterizer::SIMD {
 namespace {
 #define USE_VECTOR 1
@@ -104,7 +104,7 @@ void GPU_SW_Rasterizer::SelectImplementation()
     CopyVRAM = &isa::CopyVRAMImpl;                                                                                     \
   } while (0)
 
-#if defined(CPU_ARCH_SSE) || defined(CPU_ARCH_NEON)
+#if defined(CPU_ARCH_SSE) || defined(CPU_ARCH_NEON) || defined(CPU_ARCH_VSX)
   const char* use_isa = std::getenv("SW_USE_ISA");
 
 #if defined(CPU_ARCH_SSE)

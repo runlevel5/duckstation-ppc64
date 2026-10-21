@@ -40,6 +40,16 @@
 #else
 #include <arm_neon.h>
 #endif
+#elif defined(CPU_ARCH_PPC64)
+#ifndef DISABLE_SIMD
+#define CPU_ARCH_SIMD 1
+#define CPU_ARCH_VSX 1
+#endif
+#include <altivec.h>
+// altivec.h defines these as macros, which breaks C++ code.
+#undef vector
+#undef pixel
+#undef bool
 #endif
 
 #ifdef __APPLE__

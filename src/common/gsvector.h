@@ -16,6 +16,8 @@
 #include "common/gsvector_sse.h"
 #elif defined(CPU_ARCH_NEON)
 #include "common/gsvector_neon.h"
+#elif defined(CPU_ARCH_VSX)
+#include "common/gsvector_vsx.h"
 #else
 #include "common/gsvector_nosimd.h"
 #endif
