@@ -235,6 +235,17 @@ if(CPU_ARCH_LOONGARCH64)
   message(STATUS "Building LoongArch64 recompiler.")
 endif()
 
+if(CPU_ARCH_PPC64)
+  target_compile_definitions(core PUBLIC "ENABLE_RECOMPILER=1")
+  target_sources(core PRIVATE
+    ${RECOMPILER_SRCS}
+    cpu_recompiler_ppc64.cpp
+    cpu_recompiler_ppc64.h
+    cpu_recompiler_ppc64_emitter.h
+  )
+  message(STATUS "Building PPC64 recompiler.")
+endif()
+
 function(add_core_resources target)
   add_util_resources(${target})
 

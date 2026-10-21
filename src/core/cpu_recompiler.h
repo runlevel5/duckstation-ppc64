@@ -93,6 +93,20 @@ public:
   // Align functions to 16 bytes.
   static constexpr u32 FUNCTION_ALIGNMENT = 16;
 
+#elif defined(CPU_ARCH_PPC64)
+
+  // Number of host registers.
+  static constexpr u32 NUM_HOST_REGS = 32;
+  static constexpr bool HAS_MEMORY_OPERANDS = false;
+
+  // A reasonable "maximum" number of bytes per instruction.
+  // Calls are long on PPC64 (argument extension + address materialization + mtctr/bctrl), so be generous.
+  static constexpr u32 MAX_NEAR_HOST_BYTES_PER_INSTRUCTION = 128;
+  static constexpr u32 MIN_CODE_RESERVE_FOR_BLOCK = 512;
+
+  // Align functions to 16 bytes.
+  static constexpr u32 FUNCTION_ALIGNMENT = 16;
+
 #endif
 
 public:
