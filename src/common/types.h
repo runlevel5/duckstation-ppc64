@@ -158,6 +158,8 @@ struct dependent_int_false : std::false_type
 #define CPU_ARCH_RISCV64 1
 #elifdef __loongarch64
 #define CPU_ARCH_LOONGARCH64 1
+#elif defined(__powerpc64__) && defined(__LITTLE_ENDIAN__)
+#define CPU_ARCH_PPC64 1
 #else
 #error Unknown architecture.
 #endif
@@ -200,6 +202,8 @@ inline constexpr u32 MAX_HOST_PAGE_SIZE = HOST_PAGE_SIZE;
 inline constexpr u32 HOST_CACHE_LINE_SIZE = OVERRIDE_HOST_CACHE_LINE_SIZE;
 #elif defined(__APPLE__) && defined(__aarch64__)
 inline constexpr u32 HOST_CACHE_LINE_SIZE = 128; // Apple Silicon uses 128b cache lines.
+#elif defined(__powerpc64__)
+inline constexpr u32 HOST_CACHE_LINE_SIZE = 128; // POWER uses 128b cache lines.
 #else
 inline constexpr u32 HOST_CACHE_LINE_SIZE = 64; // Everything else is 64b.
 #endif

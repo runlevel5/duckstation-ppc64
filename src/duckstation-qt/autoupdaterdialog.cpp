@@ -92,6 +92,8 @@ using namespace Qt::StringLiterals;
     #define UPDATER_ASSET_FILENAME "DuckStation-riscv64.AppImage"
   #elif defined(CPU_ARCH_LOONGARCH64)
     #define UPDATER_ASSET_FILENAME "DuckStation-loongarch64.AppImage"
+  #elif defined(CPU_ARCH_PPC64)
+    #define UPDATER_ASSET_FILENAME "DuckStation-ppc64le.AppImage"
   #endif
 #endif
 #ifndef UPDATER_ASSET_FILENAME
