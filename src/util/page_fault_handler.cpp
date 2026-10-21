@@ -294,6 +294,10 @@ void PageFaultHandler::SignalHandler(int sig, siginfo_t* info, void* ctx)
 #elifdef CPU_ARCH_LOONGARCH64
   void* const exception_pc = reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext.__pc);
   const bool is_write = IsStoreInstruction(exception_pc);
+#elifdef CPU_ARCH_PPC64
+  ucontext_t* const context = static_cast<ucontext_t*>(ctx);
+  void* const exception_pc = reinterpret_cast<void*>(context->uc_mcontext.gp_regs[32]); // PT_NIP
+  const bool is_write = (context->uc_mcontext.gp_regs[42] & 0x02000000u) != 0;     // PT_DSISR, DSISR_ISSTORE
 #else
 #error Unsupported architecture.
 #endif
