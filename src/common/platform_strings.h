@@ -15,6 +15,8 @@
 #define CPU_ARCH_STR "riscv64"
 #elifdef CPU_ARCH_LOONGARCH64
 #define CPU_ARCH_STR "loongarch64"
+#elifdef CPU_ARCH_PPC64
+#define CPU_ARCH_STR "ppc64le"
 #else
 #error Unknown architecture.
 #endif

@@ -125,6 +125,8 @@ ALWAYS_INLINE void PauseCPU()
   asm volatile("fence" ::: "memory");
 #elif defined(CPU_ARCH_LOONGARCH64)
   asm volatile("ibar 0" ::: "memory");
+#elif defined(CPU_ARCH_PPC64)
+  asm volatile("or 1,1,1\n\tor 2,2,2" ::: "memory");
 #else
 #pragma warning("Missing implementation")
 #endif
