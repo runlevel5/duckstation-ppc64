@@ -51,6 +51,8 @@
 #include <ShlObj.h>
 #elifdef __APPLE__
 #include "common/cocoa_tools.h"
+#elifdef __linux__
+#include <unistd.h>
 #endif
 
 LOG_CHANNEL(Core);
@@ -558,10 +560,20 @@ std::string Host::GetHTTPUserAgent()
   return fmt::format("DuckStation for {} ({}) {}", TARGET_OS_STR, CPU_ARCH_STR, g_scm_tag_str);
 }
 
+static bool InitializeCPUInfo()
+{
+  // cpuinfo does not support PowerPC, and logs an error every time it fails to initialize.
+#ifdef CPU_ARCH_PPC64
+  return false;
+#else
+  return cpuinfo_initialize();
+#endif
+}
+
 bool Core::PerformEarlyHardwareChecks(Error* error)
 {
   // This shouldn't fail... if it does, just hope for the best.
-  cpuinfo_initialize();
+  InitializeCPUInfo();
 
 #ifdef CPU_ARCH_X64
 #ifdef CPU_ARCH_SSE41
@@ -614,7 +626,7 @@ bool Core::PerformEarlyHardwareChecks(Error* error)
 void Core::CheckCacheLineSize()
 {
   u32 max_line_size = 0;
-  if (cpuinfo_initialize())
+  if (InitializeCPUInfo())
   {
     const u32 num_l1is = cpuinfo_get_l1i_caches_count();
     const u32 num_l1ds = cpuinfo_get_l1d_caches_count();
@@ -638,6 +650,16 @@ void Core::CheckCacheLineSize()
         max_line_size = std::max(max_line_size, cache->line_size);
     }
   }
+
+#ifdef __linux__
+  // Fall back to the kernel's cache line size where cpuinfo does not provide it.
+  if (max_line_size == 0)
+  {
+    const long line_size = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
+    if (line_size > 0)
+      max_line_size = static_cast<u32>(line_size);
+  }
+#endif
 
   if (max_line_size == 0)
   {
@@ -663,7 +685,7 @@ void Core::LogStartupInformation()
   INFO_LOG("DuckStation for {} ({}){}", TARGET_OS_STR, CPU_ARCH_STR, suffix);
   INFO_LOG("Version: {} [{}]", g_scm_tag_str, g_scm_branch_str);
   INFO_LOG("SCM Timestamp: {}", g_scm_date_str);
-  if (const cpuinfo_package* package = cpuinfo_initialize() ? cpuinfo_get_package(0) : nullptr) [[likely]]
+  if (const cpuinfo_package* package = InitializeCPUInfo() ? cpuinfo_get_package(0) : nullptr) [[likely]]
   {
     INFO_LOG("Host CPU: {}", package->name);
     INFO_LOG("CPU has {} logical processor(s) and {} core(s) across {} cluster(s).", package->processor_count,
