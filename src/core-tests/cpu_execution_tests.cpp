@@ -188,6 +188,51 @@ TEST_P(CPUExecution, ManualProtectionDetectsChangedCode)
   }
 }
 
+TEST_P(CPUExecution, ManualProtectionDetectsChangedCodeInLargeBlock)
+{
+  // Pages that keep being invalidated switch to manual protection, and blocks on them are no longer split at page
+  // boundaries, so a single block can cover tens of kilobytes. Backends with limited load offsets have to rebase
+  // their pointers partway through the check (PPC64 does so every 32000 bytes).
+  static constexpr u32 SIZE = 20000;
+
+  Program prog;
+  prog.Emit(addu(Reg::V0, Reg::R0, Reg::R0));
+  for (u32 i = 0; i < SIZE; i++)
+    prog.Emit(addiu(Reg::V0, Reg::V0, 1));
+  const u32 slot = prog.StoreResult(Reg::V0);
+  prog.Run();
+  ASSERT_EQ(prog.Result(slot), SIZE);
+
+  // More than 4 invalidations within 60 frames switch a page to manual protection.
+  const u32 first_page = Bus::GetRAMCodePageIndex(PROGRAM_BASE);
+  const u32 last_page = Bus::GetRAMCodePageIndex(PROGRAM_BASE + (SIZE + 8) * sizeof(u32));
+  for (u32 page = first_page; page <= last_page; page++)
+  {
+    for (u32 i = 0; i < 5; i++)
+      CPU::CodeCache::InvalidateBlocksWithPageIndex(page);
+  }
+
+  const auto run = [&prog, slot]() {
+    CPU::ClearICache();
+    CPU::SetPC(PROGRAM_BASE);
+    CPU::Execute();
+    return prog.Result(slot);
+  };
+  ASSERT_EQ(run(), SIZE);
+
+  // Pages under manual protection are writable, so only the check at the start of the block can see the change.
+  // Run() prefixes one instruction, so addiu i is at offset (2 + i) * 4 from the start of the block.
+  u32 expected = SIZE;
+  for (const u32 index : {0u, 7998u, 7999u, 8000u, 8001u, SIZE - 1})
+  {
+    const u32 address = PROGRAM_BASE + (2 + index) * sizeof(u32);
+    const u32 inst = addiu(Reg::V0, Reg::V0, 2);
+    std::memcpy(&g_bus.unprotected_ram[address & g_bus.ram_mask], &inst, sizeof(inst));
+    expected++;
+    ASSERT_EQ(run(), expected) << "changed instruction " << index;
+  }
+}
+
 TEST_P(CPUExecution, PGXPIgnoresWritesToZero)
 {
   // The PGXP value for $zero must stay zero, in both PGXP modes, and with memory exceptions where add isn't a nop.
