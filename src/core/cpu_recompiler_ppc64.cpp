@@ -277,7 +277,7 @@ u32 CPU::CodeCache::EmitASMFunctions(void* code, u32 code_size)
     Label skip_event_check;
     ppcEmitStateLoad32(ppcAsm, RARG1, OFFS(&g_state.pending_ticks));
     ppcEmitStateLoad32(ppcAsm, RARG2, OFFS(&g_state.downcount));
-    ppcAsm->cmplw(RARG1, RARG2);
+    ppcAsm->cmpw(RARG1, RARG2);
     ppcAsm->bc(Cond::LT, &skip_event_check);
 
     ppcAsm->Bind(&run_events_and_dispatch);
