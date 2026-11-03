@@ -8,6 +8,8 @@
 #include "core/settings.h"
 #include "core/system_private.h"
 
+#include "common/small_string.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -137,16 +139,22 @@ TEST_P(CPUBench, ALU)
   }
 }
 
-TEST_P(CPUBench, LoadFastmemLUT)
+TEST_P(CPUBench, LoadFastmem)
 {
-  ResetMemory(CPURAMSize::Default, CPUFastmemMode::LUT);
-  Bench b;
-  b.LoadZeroExtendedAddress(Reg::T2, RAM_TEST_ADDR);
-  std::vector<u32> body;
-  for (u32 i = 0; i < BODY_REPEATS; i++)
-    body.push_back(lw(Dst(i), 0, Reg::T2));
-  EmitLoop(b, body);
-  Report("load (fastmem lut)", b);
+  for (const CPUFastmemMode mode : FASTMEM_MODES)
+  {
+    if (mode == CPUFastmemMode::Disabled)
+      continue;
+
+    ResetMemory(CPURAMSize::Default, mode);
+    Bench b;
+    b.LoadZeroExtendedAddress(Reg::T2, RAM_TEST_ADDR);
+    std::vector<u32> body;
+    for (u32 i = 0; i < BODY_REPEATS; i++)
+      body.push_back(lw(Dst(i), 0, Reg::T2));
+    EmitLoop(b, body);
+    Report(TinyString::from_format("load (fastmem {})", Settings::GetCPUFastmemModeName(mode)), b);
+  }
 }
 
 TEST_P(CPUBench, LoadHandlerCall)
@@ -161,25 +169,31 @@ TEST_P(CPUBench, LoadHandlerCall)
   Report("load (handler call)", b);
 }
 
-TEST_P(CPUBench, DependentLoadFastmemLUT)
+TEST_P(CPUBench, DependentLoadFastmem)
 {
-  ResetMemory(CPURAMSize::Default, CPUFastmemMode::LUT);
-
-  // Chase a word that points at itself, so each load's address depends on the previous load. The nop keeps the
-  // next load out of the load delay slot, which would otherwise use the old register value.
-  const u32 self = RAM_TEST_ADDR;
-  std::memcpy(&g_bus.ram[RAM_TEST_ADDR & g_bus.ram_mask], &self, sizeof(self));
-
-  Bench b;
-  b.LoadZeroExtendedAddress(Reg::T2, RAM_TEST_ADDR);
-  std::vector<u32> body;
-  for (u32 i = 0; i < BODY_REPEATS; i++)
+  for (const CPUFastmemMode mode : FASTMEM_MODES)
   {
-    body.push_back(lw(Reg::T2, 0, Reg::T2));
-    body.push_back(nop());
+    if (mode == CPUFastmemMode::Disabled)
+      continue;
+
+    ResetMemory(CPURAMSize::Default, mode);
+
+    // Chase a word that points at itself, so each load's address depends on the previous load. The nop keeps the
+    // next load out of the load delay slot, which would otherwise use the old register value.
+    const u32 self = RAM_TEST_ADDR;
+    std::memcpy(&g_bus.ram[RAM_TEST_ADDR & g_bus.ram_mask], &self, sizeof(self));
+
+    Bench b;
+    b.LoadZeroExtendedAddress(Reg::T2, RAM_TEST_ADDR);
+    std::vector<u32> body;
+    for (u32 i = 0; i < BODY_REPEATS; i++)
+    {
+      body.push_back(lw(Reg::T2, 0, Reg::T2));
+      body.push_back(nop());
+    }
+    EmitLoop(b, body);
+    Report(TinyString::from_format("dependent load (fastmem {})", Settings::GetCPUFastmemModeName(mode)), b);
   }
-  EmitLoop(b, body);
-  Report("dependent load (fastmem lut)", b);
 }
 
 TEST_P(CPUBench, Dispatch)

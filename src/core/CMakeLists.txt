@@ -236,7 +236,7 @@ if(CPU_ARCH_LOONGARCH64)
 endif()
 
 if(CPU_ARCH_PPC64)
-  target_compile_definitions(core PUBLIC "ENABLE_RECOMPILER=1")
+  target_compile_definitions(core PUBLIC "ENABLE_RECOMPILER=1" "ENABLE_MMAP_FASTMEM=1")
   target_sources(core PRIVATE
     ${RECOMPILER_SRCS}
     cpu_recompiler_ppc64.cpp
