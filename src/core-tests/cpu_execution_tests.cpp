@@ -204,6 +204,59 @@ TEST_P(CPUExecution, ManualProtectionDetectsChangedCodeInLargeBlock)
   }
 }
 
+TEST_P(CPUExecution, PendingLoadDelayFromStateFillsAfterFirstInstruction)
+{
+  // A state saved between instructions can carry a load that has executed but not written its register yet: the
+  // instruction at the saved PC is its delay slot. Resuming has to let that instruction see the old value and the
+  // next one the loaded value, in every execution mode. The recompiler does this with a flush at block entry.
+  static constexpr u32 OLD_VALUE = 0x0BAD0BADu;
+  static constexpr u32 NEW_VALUE = 0x12345678u;
+
+  // Program::Run() puts its own instruction first, so lay the block out by hand to have the delay slot read T0.
+  const std::array<u32, 9> code = {
+    addu(Reg::V0, Reg::T0, Reg::R0),
+    addu(Reg::V1, Reg::T0, Reg::R0),
+    lui(Reg::T9, static_cast<u16>(RESULTS_BASE >> 16)),
+    sw(Reg::V0, 0, Reg::T9),
+    sw(Reg::V1, 4, Reg::T9),
+    lui(Reg::AT, static_cast<u16>(ADDR_EXIT >> 16)),
+    sb(Reg::R0, static_cast<s16>(ADDR_EXIT & 0xFFFFu), Reg::AT),
+    j(PROGRAM_BASE + 7 * sizeof(u32)),
+    nop(),
+  };
+  CPU::CodeCache::InvalidateAllRAMBlocks();
+  std::memcpy(&g_bus.ram[PROGRAM_BASE & g_bus.ram_mask], code.data(), sizeof(code));
+  CPU::ClearICache();
+
+  // SetPC() flushes the pipeline, so the pending load goes in afterwards.
+  CPU::SetPC(PROGRAM_BASE);
+  CPU::g_state.regs.r[static_cast<u8>(CPU::Reg::t0)] = OLD_VALUE;
+  CPU::g_state.load_delay_reg = CPU::Reg::t0;
+  CPU::g_state.load_delay_value = NEW_VALUE;
+  CPU::g_state.next_load_delay_reg = CPU::Reg::count;
+
+  std::vector<u8> data(System::GetMaxSaveStateSize(g_settings.cpu_ram_size, false));
+  StateWrapper save_sw(std::span<u8>(data), StateWrapper::Mode::Write, SAVE_STATE_VERSION);
+  ASSERT_TRUE(CPU::DoState(save_sw));
+  data.resize(save_sw.GetPosition());
+
+  // Make sure the values come from the state rather than from what was left behind.
+  CPU::g_state.regs.r[static_cast<u8>(CPU::Reg::t0)] = 0;
+  CPU::g_state.load_delay_reg = CPU::Reg::count;
+  CPU::g_state.load_delay_value = 0;
+  StateWrapper load_sw(std::span<const u8>(data), StateWrapper::Mode::Read, SAVE_STATE_VERSION);
+  ASSERT_TRUE(CPU::DoState(load_sw));
+  ASSERT_EQ(CPU::g_state.load_delay_reg, CPU::Reg::t0);
+
+  // System::DoState() throws the code cache away after loading the CPU, the blocks from the previous execution
+  // mode are stale.
+  CPU::CodeCache::Reset();
+
+  CPU::Execute();
+  EXPECT_EQ(Program::ReadRAM(RESULTS_BASE), OLD_VALUE);
+  EXPECT_EQ(Program::ReadRAM(RESULTS_BASE + sizeof(u32)), NEW_VALUE);
+}
+
 TEST_P(CPUExecution, PGXPIgnoresWritesToZero)
 {
   // The PGXP value for $zero must stay zero, in both PGXP modes, and with memory exceptions where add isn't a nop.
