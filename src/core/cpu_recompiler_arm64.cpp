@@ -727,6 +727,20 @@ void CPU::ARM64Recompiler::GenerateBlockProtectCheck(const u8* ram_ptr, const u8
   // differences are accumulated, so only one branch is needed at the end
   bool first = true;
   u32 offset = 0;
+
+  // Manually protected blocks are not split at page boundaries, so they can outgrow the load immediates (16-byte
+  // 65520, 8-byte 32760, 4-byte 16380). Move the pointers along every 16KB instead.
+  u32 base = 0;
+  const auto rebase = [&]() {
+    if ((offset - base) < 16384)
+      return;
+
+    armAsm->add(RXARG1, RXARG1, 16384);
+    if (size >= 16)
+      armAsm->add(RXARG2, RXARG2, 16384);
+    base += 16384;
+  };
+
   if (size >= 16)
   {
     armMoveAddressToReg(armAsm, RXARG2, shadow_ptr);
@@ -752,8 +766,9 @@ void CPU::ARM64Recompiler::GenerateBlockProtectCheck(const u8* ram_ptr, const u8
 
     for (; (offset + 16) <= size; offset += 16)
     {
-      armAsm->ldr(q1, MemOperand(RXARG1, offset));
-      armAsm->ldr(q3, MemOperand(RXARG2, offset));
+      rebase();
+      armAsm->ldr(q1, MemOperand(RXARG1, offset - base));
+      armAsm->ldr(q3, MemOperand(RXARG2, offset - base));
       if (!first)
       {
         armAsm->eor(v1.V16B(), v1.V16B(), v3.V16B());
@@ -778,10 +793,11 @@ void CPU::ARM64Recompiler::GenerateBlockProtectCheck(const u8* ram_ptr, const u8
     const u32 bytes = ((size - offset) >= 8) ? 8 : 4;
     const Register ram_reg = (bytes == 8) ? RXARG3 : RWARG3;
     const Register shadow_reg = (bytes == 8) ? RXSCRATCH : RWSCRATCH;
-    armAsm->ldr(ram_reg, MemOperand(RXARG1, offset));
+    rebase();
+    armAsm->ldr(ram_reg, MemOperand(RXARG1, offset - base));
     if (size >= 16)
     {
-      armAsm->ldr(shadow_reg, MemOperand(RXARG2, offset));
+      armAsm->ldr(shadow_reg, MemOperand(RXARG2, offset - base));
     }
     else
     {
