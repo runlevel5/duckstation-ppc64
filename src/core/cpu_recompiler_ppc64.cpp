@@ -15,6 +15,7 @@
 #include "common/memmap.h"
 #include "common/string_util.h"
 
+#include <cstring>
 #include <limits>
 
 #ifdef CPU_ARCH_PPC64
@@ -559,70 +560,83 @@ void CPU::PPC64Recompiler::EmitUExtH(GPR rd, GPR rs)
 
 void CPU::PPC64Recompiler::GenerateBlockProtectCheck(const u8* ram_ptr, const u8* shadow_ptr, u32 size)
 {
-  // store it first to reduce code size, because we can offset
+  // Differences are xor'd and or'd together in RSCRATCH2, so only one branch is needed at the end. That single bc is
+  // always in range, which means the exit path no longer has to be emitted periodically for large blocks.
   ppcAsm->LoadImm64(RARG1, static_cast<u64>(reinterpret_cast<uintptr_t>(ram_ptr)));
-  ppcAsm->LoadImm64(RARG2, static_cast<u64>(reinterpret_cast<uintptr_t>(shadow_ptr)));
 
-  // Conditional branches only reach 32KB, so emit the exit path periodically for large blocks.
-  static constexpr u32 COMPARES_PER_EXIT = 512;
+  // Small blocks xor against the instruction bits as immediates, which saves materializing the shadow pointer.
+  const bool load_shadow = (size >= 16);
+  if (load_shadow)
+    ppcAsm->LoadImm64(RARG2, static_cast<u64>(reinterpret_cast<uintptr_t>(shadow_ptr)));
 
+  // Load offsets only reach 32KB, so rebase the pointers periodically for large blocks.
   u32 offset = 0;
-  u32 compares = 0;
-  Label block_changed;
-  Label block_unchanged;
-
-  const auto rebase = [this, &offset]() {
+  const auto rebase = [this, load_shadow, &offset]() {
     if (offset >= 32000)
     {
       ppcAsm->addi(RARG1, RARG1, static_cast<s32>(offset));
-      ppcAsm->addi(RARG2, RARG2, static_cast<s32>(offset));
+      if (load_shadow)
+        ppcAsm->addi(RARG2, RARG2, static_cast<s32>(offset));
       offset = 0;
     }
   };
-  const auto flush_exit = [this, &compares, &block_changed]() {
-    if (++compares < COMPARES_PER_EXIT)
-      return;
 
-    Label cont;
-    ppcAsm->b(&cont);
-    ppcAsm->Bind(&block_changed);
-    ppcEmitJmp(ppcAsm, CodeCache::g_recompiler_functions.discard_and_recompile_block);
-    ppcAsm->Bind(&cont);
-    block_changed.~Label();
-    new (&block_changed) Label();
-    compares = 0;
+  // The first difference lands directly in the accumulator, later ones are or'd into it.
+  bool first = true;
+  const auto accumulate = [this, &first]() {
+    if (!first)
+      ppcAsm->or_(RSCRATCH2, RSCRATCH2, RARG3);
+    first = false;
   };
 
-  while (size >= 8)
+  if (load_shadow)
   {
-    rebase();
-    ppcAsm->ld(RARG3, static_cast<s32>(offset), RARG1);
-    ppcAsm->ld(RSCRATCH, static_cast<s32>(offset), RARG2);
-    ppcAsm->cmpd(RARG3, RSCRATCH);
-    ppcAsm->bc(Cond::NE, &block_changed);
-    offset += 8;
-    size -= 8;
-    flush_exit();
+    while (size >= 8)
+    {
+      rebase();
+      ppcAsm->ld(RARG3, static_cast<s32>(offset), RARG1);
+      ppcAsm->ld(RSCRATCH, static_cast<s32>(offset), RARG2);
+      ppcAsm->xor_(first ? RSCRATCH2 : RARG3, RARG3, RSCRATCH);
+      accumulate();
+      offset += 8;
+      size -= 8;
+    }
+
+    if (size >= 4)
+    {
+      rebase();
+      ppcAsm->lwz(RARG3, static_cast<s32>(offset), RARG1);
+      ppcAsm->lwz(RSCRATCH, static_cast<s32>(offset), RARG2);
+      ppcAsm->xor_(first ? RSCRATCH2 : RARG3, RARG3, RSCRATCH);
+      accumulate();
+      offset += 4;
+      size -= 4;
+    }
+  }
+  else
+  {
+    while (size >= 4)
+    {
+      const GPR dst = first ? RSCRATCH2 : RARG3;
+      u32 bits;
+      std::memcpy(&bits, shadow_ptr + offset, sizeof(bits));
+      ppcAsm->lwz(dst, static_cast<s32>(offset), RARG1);
+      if ((bits >> 16) != 0)
+        ppcAsm->xoris(dst, dst, bits >> 16);
+      if ((bits & 0xFFFFu) != 0)
+        ppcAsm->xori(dst, dst, bits & 0xFFFFu);
+      accumulate();
+      offset += 4;
+      size -= 4;
+    }
   }
 
-  while (size >= 4)
-  {
-    rebase();
-    ppcAsm->lwz(RARG3, static_cast<s32>(offset), RARG1);
-    ppcAsm->lwz(RSCRATCH, static_cast<s32>(offset), RARG2);
-    ppcAsm->cmpw(RARG3, RSCRATCH);
-    ppcAsm->bc(Cond::NE, &block_changed);
-    offset += 4;
-    size -= 4;
-    flush_exit();
-  }
+  DebugAssert(size == 0 && !first);
 
-  DebugAssert(size == 0);
-
-  ppcAsm->b(&block_unchanged);
-  ppcAsm->Bind(&block_changed);
+  ppcAsm->cmpdi(RSCRATCH2, 0);
+  SwitchToFarCode(true, Cond::NE);
   ppcEmitJmp(ppcAsm, CodeCache::g_recompiler_functions.discard_and_recompile_block);
-  ppcAsm->Bind(&block_unchanged);
+  SwitchToNearCode(false);
 }
 
 void CPU::PPC64Recompiler::GenerateICacheCheckAndUpdate()
