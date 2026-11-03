@@ -24,6 +24,8 @@ struct fastjmp_buf
   static constexpr std::size_t BUF_SIZE = 216;
 #elif defined(__loongarch64)
   static constexpr std::size_t BUF_SIZE = 160;
+#elif defined(__powerpc64__) && defined(__LITTLE_ENDIAN__)
+  static constexpr std::size_t BUF_SIZE = 512;
 #else
 #error Unknown architecture.
 #endif

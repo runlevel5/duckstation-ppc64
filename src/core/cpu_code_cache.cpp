@@ -60,6 +60,10 @@ static constexpr u32 INVALIDATE_FRAMES_FOR_MANUAL_PROTECTION = 60;
 // Use a smaller code buffer size on AArch32 to have a better chance of being in range.
 static constexpr u32 RECOMPILER_CODE_CACHE_SIZE = 16 * 1024 * 1024;
 static constexpr u32 RECOMPILER_FAR_CODE_CACHE_SIZE = 4 * 1024 * 1024;
+#elif defined(CPU_ARCH_PPC64)
+// 32MB is the largest buffer where every block link and backpatch is within range of a single b (+/- 32MB).
+static constexpr u32 RECOMPILER_CODE_CACHE_SIZE = 32 * 1024 * 1024;
+static constexpr u32 RECOMPILER_FAR_CODE_CACHE_SIZE = 8 * 1024 * 1024;
 #else
 static constexpr u32 RECOMPILER_CODE_CACHE_SIZE = 48 * 1024 * 1024;
 static constexpr u32 RECOMPILER_FAR_CODE_CACHE_SIZE = 16 * 1024 * 1024;
