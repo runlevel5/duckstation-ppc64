@@ -188,6 +188,104 @@ TEST_P(CPUExecution, ManualProtectionDetectsChangedCode)
   }
 }
 
+TEST_P(CPUExecution, ManualProtectionDetectsChangedCodeInLargeBlock)
+{
+  // Pages that keep being invalidated switch to manual protection, and blocks on them are no longer split at page
+  // boundaries, so a single block can cover tens of kilobytes. Backends with limited load offsets have to rebase
+  // their pointers partway through the check (PPC64 does so every 32000 bytes).
+  static constexpr u32 SIZE = 20000;
+
+  Program prog;
+  prog.Emit(addu(Reg::V0, Reg::R0, Reg::R0));
+  for (u32 i = 0; i < SIZE; i++)
+    prog.Emit(addiu(Reg::V0, Reg::V0, 1));
+  const u32 slot = prog.StoreResult(Reg::V0);
+  prog.Run();
+  ASSERT_EQ(prog.Result(slot), SIZE);
+
+  // More than 4 invalidations within 60 frames switch a page to manual protection.
+  const u32 first_page = Bus::GetRAMCodePageIndex(PROGRAM_BASE);
+  const u32 last_page = Bus::GetRAMCodePageIndex(PROGRAM_BASE + (SIZE + 8) * sizeof(u32));
+  for (u32 page = first_page; page <= last_page; page++)
+  {
+    for (u32 i = 0; i < 5; i++)
+      CPU::CodeCache::InvalidateBlocksWithPageIndex(page);
+  }
+
+  const auto run = [&prog, slot]() {
+    CPU::ClearICache();
+    CPU::SetPC(PROGRAM_BASE);
+    CPU::Execute();
+    return prog.Result(slot);
+  };
+  ASSERT_EQ(run(), SIZE);
+
+  // Pages under manual protection are writable, so only the check at the start of the block can see the change.
+  // Run() prefixes one instruction, so addiu i is at offset (2 + i) * 4 from the start of the block.
+  u32 expected = SIZE;
+  for (const u32 index : {0u, 7998u, 7999u, 8000u, 8001u, SIZE - 1})
+  {
+    const u32 address = PROGRAM_BASE + (2 + index) * sizeof(u32);
+    const u32 inst = addiu(Reg::V0, Reg::V0, 2);
+    std::memcpy(&g_bus.unprotected_ram[address & g_bus.ram_mask], &inst, sizeof(inst));
+    expected++;
+    ASSERT_EQ(run(), expected) << "changed instruction " << index;
+  }
+}
+
+TEST_P(CPUExecution, PendingLoadDelayFromStateFillsAfterFirstInstruction)
+{
+  // A state saved between instructions can carry a load that has executed but not written its register yet: the
+  // instruction at the saved PC is its delay slot. Resuming has to let that instruction see the old value and the
+  // next one the loaded value, in every execution mode. The recompiler does this with a flush at block entry.
+  static constexpr u32 OLD_VALUE = 0x0BAD0BADu;
+  static constexpr u32 NEW_VALUE = 0x12345678u;
+
+  // Program::Run() puts its own instruction first, so lay the block out by hand to have the delay slot read T0.
+  const std::array<u32, 9> code = {
+    addu(Reg::V0, Reg::T0, Reg::R0),
+    addu(Reg::V1, Reg::T0, Reg::R0),
+    lui(Reg::T9, static_cast<u16>(RESULTS_BASE >> 16)),
+    sw(Reg::V0, 0, Reg::T9),
+    sw(Reg::V1, 4, Reg::T9),
+    lui(Reg::AT, static_cast<u16>(ADDR_EXIT >> 16)),
+    sb(Reg::R0, static_cast<s16>(ADDR_EXIT & 0xFFFFu), Reg::AT),
+    j(PROGRAM_BASE + 7 * sizeof(u32)),
+    nop(),
+  };
+  CPU::CodeCache::InvalidateAllRAMBlocks();
+  std::memcpy(&g_bus.ram[PROGRAM_BASE & g_bus.ram_mask], code.data(), sizeof(code));
+  CPU::ClearICache();
+
+  // SetPC() flushes the pipeline, so the pending load goes in afterwards.
+  CPU::SetPC(PROGRAM_BASE);
+  CPU::g_state.regs.r[static_cast<u8>(CPU::Reg::t0)] = OLD_VALUE;
+  CPU::g_state.load_delay_reg = CPU::Reg::t0;
+  CPU::g_state.load_delay_value = NEW_VALUE;
+  CPU::g_state.next_load_delay_reg = CPU::Reg::count;
+
+  std::vector<u8> data(System::GetMaxSaveStateSize(g_settings.cpu_ram_size, false));
+  StateWrapper save_sw(std::span<u8>(data), StateWrapper::Mode::Write, SAVE_STATE_VERSION);
+  ASSERT_TRUE(CPU::DoState(save_sw));
+  data.resize(save_sw.GetPosition());
+
+  // Make sure the values come from the state rather than from what was left behind.
+  CPU::g_state.regs.r[static_cast<u8>(CPU::Reg::t0)] = 0;
+  CPU::g_state.load_delay_reg = CPU::Reg::count;
+  CPU::g_state.load_delay_value = 0;
+  StateWrapper load_sw(std::span<const u8>(data), StateWrapper::Mode::Read, SAVE_STATE_VERSION);
+  ASSERT_TRUE(CPU::DoState(load_sw));
+  ASSERT_EQ(CPU::g_state.load_delay_reg, CPU::Reg::t0);
+
+  // System::DoState() throws the code cache away after loading the CPU, the blocks from the previous execution
+  // mode are stale.
+  CPU::CodeCache::Reset();
+
+  CPU::Execute();
+  EXPECT_EQ(Program::ReadRAM(RESULTS_BASE), OLD_VALUE);
+  EXPECT_EQ(Program::ReadRAM(RESULTS_BASE + sizeof(u32)), NEW_VALUE);
+}
+
 TEST_P(CPUExecution, PGXPIgnoresWritesToZero)
 {
   // The PGXP value for $zero must stay zero, in both PGXP modes, and with memory exceptions where add isn't a nop.
