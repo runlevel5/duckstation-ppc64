@@ -161,7 +161,8 @@ void MemMap::ReleaseJITMemory(void* ptr, size_t size)
     ERROR_LOG("Failed to free code pointer {}", static_cast<void*>(ptr));
 }
 
-#if defined(CPU_ARCH_ARM32) || defined(CPU_ARCH_ARM64) || defined(CPU_ARCH_RISCV64) || defined(CPU_ARCH_LOONGARCH64)
+#if defined(CPU_ARCH_ARM32) || defined(CPU_ARCH_ARM64) || defined(CPU_ARCH_RISCV64) ||                               \
+    defined(CPU_ARCH_LOONGARCH64) || defined(CPU_ARCH_PPC64)
 
 void MemMap::FlushInstructionCache(void* address, size_t size)
 {
@@ -529,7 +530,8 @@ void MemMap::ReleaseJITMemory(void* ptr, size_t size)
 #endif
 }
 
-#if defined(CPU_ARCH_ARM32) || defined(CPU_ARCH_ARM64) || defined(CPU_ARCH_RISCV64) || defined(CPU_ARCH_LOONGARCH64)
+#if defined(CPU_ARCH_ARM32) || defined(CPU_ARCH_ARM64) || defined(CPU_ARCH_RISCV64) ||                               \
+    defined(CPU_ARCH_LOONGARCH64) || defined(CPU_ARCH_PPC64)
 
 void MemMap::FlushInstructionCache(void* address, size_t size)
 {
@@ -789,12 +791,24 @@ void MemMap::ReleaseJITMemory(void* ptr, size_t size)
     ERROR_LOG("Failed to free code pointer {}", static_cast<void*>(ptr));
 }
 
-#if defined(CPU_ARCH_ARM32) || defined(CPU_ARCH_ARM64) || defined(CPU_ARCH_RISCV64) || defined(CPU_ARCH_LOONGARCH64)
+#if defined(CPU_ARCH_ARM32) || defined(CPU_ARCH_ARM64) || defined(CPU_ARCH_RISCV64) ||                               \
+    defined(CPU_ARCH_LOONGARCH64) || defined(CPU_ARCH_PPC64)
 
 void MemMap::FlushInstructionCache(void* address, size_t size)
 {
 #if defined(CPU_ARCH_RISCV64) && defined(__linux__) && defined(__clang__) && (__clang_major__ <= 18)
   __riscv_flush_icache(reinterpret_cast<char*>(address), reinterpret_cast<char*>(address) + size, 0);
+#elif defined(CPU_ARCH_PPC64)
+  // Clang lowers __builtin___clear_cache() to a call to libgcc's __clear_cache(), which is a no-op on PowerPC.
+  // Write back the data cache blocks, then invalidate the instruction cache blocks and discard prefetched instructions.
+  const uintptr_t start = reinterpret_cast<uintptr_t>(address) & ~static_cast<uintptr_t>(HOST_CACHE_LINE_SIZE - 1);
+  const uintptr_t end = reinterpret_cast<uintptr_t>(address) + size;
+  for (uintptr_t ptr = start; ptr < end; ptr += HOST_CACHE_LINE_SIZE)
+    __asm__ __volatile__("dcbst 0,%0" ::"r"(ptr) : "memory");
+  __asm__ __volatile__("sync" ::: "memory");
+  for (uintptr_t ptr = start; ptr < end; ptr += HOST_CACHE_LINE_SIZE)
+    __asm__ __volatile__("icbi 0,%0" ::"r"(ptr) : "memory");
+  __asm__ __volatile__("sync\n\tisync" ::: "memory");
 #else
   __builtin___clear_cache(reinterpret_cast<char*>(address), reinterpret_cast<char*>(address) + size);
 #endif
@@ -874,7 +888,7 @@ void* MemMap::AllocateJITMemory(size_t size)
   static constexpr size_t assume_binary_size = 64 * 1024 * 1024;
   static constexpr size_t step = 64 * 1024 * 1024;
   static constexpr size_t max_displacement = 0x80000000u;
-#elif defined(CPU_ARCH_ARM64) || defined(CPU_ARCH_RISCV64) || defined(CPU_ARCH_LOONGARCH64)
+#elif defined(CPU_ARCH_ARM64) || defined(CPU_ARCH_RISCV64) || defined(CPU_ARCH_LOONGARCH64) || defined(CPU_ARCH_PPC64)
   static constexpr size_t assume_binary_size = 16 * 1024 * 1024;
   static constexpr size_t step = 8 * 1024 * 1024;
   static constexpr size_t max_displacement =

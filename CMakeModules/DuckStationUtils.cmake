@@ -105,6 +105,9 @@ function(detect_architecture)
   elseif("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "loongarch64")
     message(STATUS "Building LoongArch 64 binaries.")
     set(CPU_ARCH_LOONGARCH64 TRUE PARENT_SCOPE)
+  elseif("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "ppc64le")
+    message(STATUS "Building PPC64LE binaries.")
+    set(CPU_ARCH_PPC64 TRUE PARENT_SCOPE)
   else()
     message(FATAL_ERROR "Unknown system processor: ${CMAKE_SYSTEM_PROCESSOR}")
   endif()
@@ -114,7 +117,7 @@ function(detect_page_size)
   # This is only needed for ARM64, or if the user hasn't overridden it explicitly.
   # For universal Apple builds, we use preprocessor macros to determine page size.
   # Similar for Windows, except it's always 4KB.
-  if(NOT CPU_ARCH_ARM64 OR NOT LINUX)
+  if((NOT CPU_ARCH_ARM64 AND NOT CPU_ARCH_PPC64) OR NOT LINUX)
     unset(HOST_PAGE_SIZE CACHE)
     unset(HOST_PAGE_SIZE PARENT_SCOPE)
     unset(HOST_MIN_PAGE_SIZE CACHE)

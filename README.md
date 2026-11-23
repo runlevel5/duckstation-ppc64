@@ -21,7 +21,7 @@ DuckStation features a fully-featured frontend built using Qt, as well as a full
 
 Other features include:
 
- - CPU Recompiler/JIT (x86-64, armv7/AArch32, AArch64, RISC-V/RV64).
+ - CPU Recompiler/JIT (x86-64, armv7/AArch32, AArch64, RISC-V/RV64, PowerPC64LE).
  - Hardware renderer supporting D3D11, D3D12, OpenGL, Vulkan and Metal APIs.
  - Upscaling, texture filtering, and true colour (24-bit) in hardware renderers.
  - PGXP for geometry precision, texture correction, and depth buffer emulation.
@@ -66,7 +66,7 @@ Other features include:
  - Parallel port cartridge emulation.
 
 ## System Requirements
- - A CPU faster than a potato. But it needs to be x86_64, AArch32/armv7, AArch64/ARMv8, or RISC-V/RV64.
+ - A CPU faster than a potato. But it needs to be x86_64, AArch32/armv7, AArch64/ARMv8, PowerPC64LE or RISC-V/RV64.
  - A GPU capable of OpenGL 3.1/OpenGL ES 3.1/Direct3D 11 Feature Level 10.0/Vulkan 1.0. So, basically anything made in the last 10 years or so.
  - SDL, XInput or DInput compatible game controller (e.g. XB360/XBOne/XBSeries). DualShock 3 users on Windows will need to install the official DualShock 3 drivers included as part of PlayStation Now.
 
